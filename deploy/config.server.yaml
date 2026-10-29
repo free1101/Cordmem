@@ -1,0 +1,128 @@
+# =============================================================================
+# 部署版服务配置 —— 逐项复制自 configs/20261026best.yaml
+# （2026-10-26 定版：locomo full 96.97% / lme full 100% / beam1M +5pp，
+#   pmv1 acc 64.76%、pmv2 acc 55.17%，见该文件头部台账）
+#
+# 相对 20261026best.yaml 只改了两处**路径**，检索参数一个都没动：
+#   1. db_path    -> /data/memories.db        （docker volume，容器重建不丢）
+#   2. expand_dir -> /app/data/hyperE/...     （绝对路径，避免受 CWD 影响）
+#
+# ⚠ 优先级坑（见 src/config.py 头部）：**YAML > 环境变量**。
+#   本文件里显式声明过的字段，compose/env 里的同名 MEMORY_* / EMBEDDING_*
+#   会被忽略并打 WARNING。唯一例外是 DASHSCOPE_API_KEY —— 它不是 ServerConfig
+#   字段，走 src/embedder.py 的 `_env()`，必须靠环境变量/compose env_file 给。
+#
+# ⚠ Embedding 段已满足学术榜硬性要求：text-embedding-v4（见 dict.platform 规范）。
+#   换模型 / 换端点 / 换 `embedding_api_dimensions` = 换向量空间，
+#   store._check_identity() 会**拒绝打开**旧库，必须删库重灌。
+# =============================================================================
+
+exp_name: server_best20261026
+output_root: result
+
+server:
+  db_path: /data/memories.db
+
+  # ----- embedding（百炼 text-embedding-v4）-----
+  embedding_backend: api
+  embedding_model: text-embedding-v4
+  embedding_api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  embedding_api_dimensions: 1024
+  embedding_api_batch_size: 10          # 百炼硬上限 10 条/请求，超了直接 400
+  embedding_query_prefix: null
+  embedding_max_seq_length: 512         # 仅 local 后端生效，此处不影响请求
+
+  # ----- chunking -----
+  chunk_tokens: 320
+  chunk_overlap: 40
+  drop_short_tail: true
+
+  # ----- fusion -----
+  fuse_strategy: rrf
+  rrf_k: 60
+  bm25_weight: 0.4
+  vector_weight: 0.6
+  lexical_weight: 0.5
+  retrieval_recall_n: 300
+  retrieval_mode: enhanced
+  option_view_weight: 0.3
+
+  # ----- same-session adjacency -----
+  adjacency_enabled: true
+  adjacency_window: 1
+  adjacency_seed_k: 10
+
+  # ----- rerank（默认关；开它必须换含 torch 的镜像）-----
+  rerank_enabled: false
+  reranker_model: BAAI/bge-reranker-base
+  rerank_recall_n: 200
+  rerank_top_k: 100
+  reranker_batch_size: 32
+  reranker_max_length: 512
+
+  # ----- content augmentation -----
+  context_messages: 0
+  temporal_enrichment: true
+
+  # ----- temporal filter -----
+  temporal_filter: soft
+  temporal_soft_bonus: 0.15
+  temporal_filter_keep_unknown: true
+  temporal_event_dates: true
+  untimestamped_order_meta: true
+
+  # ----- search 输出归拢（默认关，只重排不改候选集）-----
+  search_merge_same_message: false
+  search_group_adjacent_messages: false
+
+  # ----- query expansion（HyperE WordNet，开 -> 4 路融合）-----
+  expand_enabled: true
+  expand_relations:
+  - hypernym_noun
+  expand_files: []
+  expand_dir: /app/data/hyperE/hyperE.wn.10d
+  expand_per_token_n: 3
+  expand_top_n: 20
+  expand_max_graph_distance: 1.5
+  expand_min_token_len: 3
+  expand_multiword: split
+  expand_drop_stopwords: true
+  expand_skip_capitalized: true
+  expand_verify_pairs: true
+  expand_dense_query_mode: related
+  expand_bm25_weight: 0.5
+  expand_dense_weight: 0.5
+
+  # ----- forget tombstone（遗忘降权）-----
+  forget_penalty: 0.15
+  forget_min_shared: 2
+  forget_match_mode: vector
+  forget_sim_threshold: 0.7
+  forget_genuine_gate: true
+  forget_genuine_min: 1
+  forget_genuine_min_ratio: 0.05
+  forget_max_coverage: 0.5
+  forget_mask_source: all
+
+  # ----- PRF / Rocchio -----
+  prf_enabled: true
+  prf_beta: 0.5
+  prf_topk: 5
+
+  # ----- MMR + session 软配额 -----
+  mmr_enabled: true
+  mmr_lambda: 0.5
+  mmr_candidate_n: 0
+  session_quota_enabled: true
+  session_quota_n: 1
+  mmr_route_enabled: true
+  mmr_route_sim_threshold: 0.9
+  mmr_route_min_dup_pairs: 5
+
+  # ----- 句级向量 -----
+  sent_index_enabled: true
+  sent_rescore_enabled: true
+  sent_pool: max
+  sent_alpha: 0.7
+  sent_weight: 0.3
+  sent_min_tokens: 4

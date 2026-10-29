@@ -1,0 +1,40 @@
+# AML Memory Adapter —— Caddy 反向代理（自动申请/续期 Let's Encrypt 证书）
+#
+# 把 aml.your-domain.com 换成你给 AML 平台填的 Add/Search 域名（必须公网、
+# HTTPS、URL 不含凭据/私有/回环地址）。Caddy 会自动做 HTTP->HTTPS 跳转。
+#
+# 单次请求最长 30 分钟（AML 契约），故 read_timeout 放大到 1800s；
+# flush_interval -1 让流式/大响应实时转发，不被缓冲。
+
+{
+    # 证书注册邮箱：填一个你能收信的地址（如 email you@example.com）。
+    # 不填也能正常签发，只是收不到证书到期 / 吊销通知，出问题要自己看日志。
+    # 内网/测试时若 80 端口被占用可暂不自动 HTTP 挑战；正式部署请保留 80/443 都开
+    # email you@example.com
+}
+
+https://aml.your-domain.com {
+
+    encode gzip
+
+    # 尾斜杠在边缘归一，避免上游返回 307 导致协议降级。
+    #   原因：FastAPI 的 redirect_slashes 用 request.url 拼 Location；Caddy 以明文 HTTP
+    #   转发给 uvicorn，uvicorn 未认 X-Forwarded-Proto 时 scheme 记为 http，于是
+    #   https://host/add/ 会被 307 指到 http://host/add（HTTPS 降级成明文）。
+    #   POST 场景更糟：客户端跟随后通常改发 GET 并丢 body，Add 直接失效。
+    #   这里先把 /health/ /add/ /search/ 改写成去尾斜杠的路径，请求不再进入那条 307。
+    @trailing_slash path_regexp trailing ^/(health|add|search)/$
+    rewrite @trailing_slash /{re.trailing.1}
+
+    reverse_proxy memory:8000 {
+        flush_interval -1
+        # 显式告知上游真实协议/主机（Caddy 默认会带，这里写死以消除版本差异）
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        transport http {
+            read_timeout 1800s
+            write_timeout 1800s
+            dial_timeout 30s
+        }
+    }
+}

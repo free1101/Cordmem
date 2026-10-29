@@ -1,0 +1,20 @@
+# 最小化生产依赖 —— 镜像里**故意不含** torch / sentence-transformers。
+#
+# 能这么剪，是因为 deploy/config.server.yaml 用的是：
+#   embedding_backend=api（POST 百炼 /embeddings，走 httpx）
+#   rerank_enabled=false
+# 而 src/embedder.py:167 与 src/rerank.py:26 的 sentence_transformers 都在函数体内
+# 延迟导入，不走到就不会 import。
+#
+# ⚠ nltk 是**必装**项，不能省：src/chunking.py:29 用 try/except 包了
+#   `from nltk.stem import SnowballStemmer`，缺库时不会报错、只会静默回退到内置
+#   的 `_rule_stem()` —— BM25 的词干还原口径与本地评测不一致，召回率悄悄变化。
+#   这是最危险的一类部署事故：有降级路径、零报错、只看得见分数退步。
+fastapi>=0.110
+uvicorn>=0.29
+httpx>=0.27,<1
+pydantic>=2.6
+numpy>=1.26
+rank-bm25>=0.2.2
+pyyaml>=6.0        # load_config() 读 MEMORY_CONFIG 指向的 YAML
+nltk>=3.8          # BM25 词干还原；缺失会静默降级，务必装上

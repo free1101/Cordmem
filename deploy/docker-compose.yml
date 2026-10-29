@@ -1,0 +1,64 @@
+# AML Memory Adapter —— 本地一键编排
+#
+# 用法（在仓库根执行，build context 必须是仓库根）：
+#   cd f:/code/memory_20261022
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# build context = ".." （仓库根），dockerfile 在 deploy/，确保 Dockerfile 里的
+#   COPY src/ / COPY data/ / COPY deploy/config.server.yaml 都能解析。
+#
+# 说明：
+#   * app 只监听 127.0.0.1:8000（不对外暴露），由同 compose 的 caddy 做 HTTPS 反代。
+#     AML 平台要求 HTTPS + 公网域名，且 URL 不得含凭据 / 私有 / 回环地址。
+#   * /data 用命名卷持久化 SQLite（memories.db + WAL）；容器重建不丢数据。
+#   * 内存上限按目标 ECS（ecs.e-c1m2.large = 2GiB）保守设为 1.5g；若实例内存更大可上调。
+#   * 正式评测前清空库：
+#       docker compose -f deploy/docker-compose.yml exec memory \
+#         rm -f /data/memories.db /data/memories.db-wal /data/memories.db-shm
+#       docker compose -f deploy/docker-compose.yml restart memory
+
+services:
+  memory:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: aml-memory:latest
+    env_file: .env   # 相对本 compose 文件所在目录（deploy/）
+    environment:
+      MEMORY_CONFIG: /app/config.server.yaml
+      MEMORY_DB_PATH: /data/memories.db
+      PYTHONPATH: /app/src
+    volumes:
+      - memory-db:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro   # 相对本 compose 文件所在目录（deploy/）
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      - memory
+
+volumes:
+  memory-db:
+  caddy-data:
+  caddy-config:

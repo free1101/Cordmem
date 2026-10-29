@@ -1,0 +1,99 @@
+# 20261026best —— 3 小时检索调参实验定版的最优配置
+#
+# 来源：pack 基准配置（result/fullon_conv48_mock_pack_locomo_20261024_182541/config.yaml）
+#       + 唯一改动 mmr_lambda: 0.6 -> 0.5
+# 实验台账：local_eval/tuning_3h_ledger.md（2026-10-26，23 轮扫描 + 双轨校验）
+# 验证结果：
+#   主轨（--mock 召回口径，综合分 0.805，基线 0.788）
+#     locomo conv48  full 96.97%（1 zero）
+#     lme rep24      full 100.00%（0 zero）
+#     beam1M beam-22 full 50.00%（基线 45%，+5pp）
+#   校验轨（真 LLM 端到端）
+#     pmv1 2f73067a  acc 64.76%（持平基线）
+#     pmv2 :120      acc 55.17%（基线 46.72%，+8.45pp）
+# 约束说明：以下所有参数均未触碰重灌清单（embedding_*/chunk_*/drop_short_tail/
+#   sent_index_enabled/context_messages），对既有 pack 灌库的 memories.db
+#   可直接 --skip-add 复用；换数据或动上述参数需重灌。
+
+exp_name: best20261026
+output_root: result
+server:
+  db_path: local_data/memories.db
+  embedding_model: text-embedding-v4
+  embedding_backend: api
+  embedding_api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  embedding_api_dimensions: 1024
+  embedding_api_batch_size: 10
+  embedding_query_prefix: null
+  embedding_max_seq_length: 512
+  chunk_tokens: 320
+  chunk_overlap: 40
+  drop_short_tail: true
+  bm25_weight: 0.4
+  vector_weight: 0.6
+  fuse_strategy: rrf
+  rrf_k: 60
+  lexical_weight: 0.5
+  retrieval_recall_n: 300
+  retrieval_mode: enhanced
+  option_view_weight: 0.3
+  adjacency_enabled: true
+  adjacency_window: 1
+  adjacency_seed_k: 10
+  rerank_enabled: false
+  reranker_model: BAAI/bge-reranker-base
+  rerank_recall_n: 200
+  rerank_top_k: 100
+  reranker_batch_size: 32
+  reranker_max_length: 512
+  context_messages: 0
+  temporal_enrichment: true
+  search_merge_same_message: false
+  search_group_adjacent_messages: false
+  temporal_filter: soft
+  temporal_soft_bonus: 0.15
+  temporal_filter_keep_unknown: true
+  temporal_event_dates: true
+  untimestamped_order_meta: true
+  expand_enabled: true
+  expand_relations:
+  - hypernym_noun
+  expand_files: []
+  expand_dir: data/hyperE/hyperE.wn.10d
+  expand_per_token_n: 3
+  expand_top_n: 20
+  expand_max_graph_distance: 1.5
+  expand_min_token_len: 3
+  expand_multiword: split
+  expand_drop_stopwords: true
+  expand_skip_capitalized: true
+  expand_verify_pairs: true
+  expand_dense_query_mode: related
+  expand_bm25_weight: 0.5
+  expand_dense_weight: 0.5
+  forget_penalty: 0.15
+  forget_min_shared: 2
+  forget_match_mode: vector
+  forget_sim_threshold: 0.7
+  forget_genuine_gate: true
+  forget_genuine_min: 1
+  forget_genuine_min_ratio: 0.05
+  forget_max_coverage: 0.5
+  forget_mask_source: all
+  prf_enabled: true
+  prf_beta: 0.5
+  prf_topk: 5
+  mmr_enabled: true
+  mmr_lambda: 0.5
+  mmr_candidate_n: 0
+  session_quota_enabled: true
+  session_quota_n: 1
+  mmr_route_enabled: true
+  mmr_route_sim_threshold: 0.9
+  mmr_route_min_dup_pairs: 5
+  sent_index_enabled: true
+  sent_rescore_enabled: true
+  sent_pool: max
+  sent_alpha: 0.7
+  sent_weight: 0.3
+  sent_min_tokens: 4
